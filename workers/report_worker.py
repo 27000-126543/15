@@ -96,32 +96,73 @@ def main() -> int:
                 LiveSession.start_time < end_dt,
             ).all()
             session_ids = [s.id for s in sessions]
+            session_str_ids = [s.session_id for s in sessions]
 
-            total_gmv = db.query(func.coalesce(func.sum(LiveSession.total_gmv), 0)).filter(
-                LiveSession.id.in_(session_ids) if session_ids else False
-            ).scalar() or 0 if session_ids else 0
+            session_gmv_map = {}
+            session_viewer_map = {}
+            session_order_map = {}
 
-            total_viewers = db.query(func.coalesce(func.sum(LiveSession.total_viewers), 0)).filter(
-                LiveSession.id.in_(session_ids) if session_ids else False
-            ).scalar() or 0 if session_ids else 0
+            if session_str_ids:
+                try:
+                    order_stats = db.query(
+                        Order.session_id,
+                        func.count(Order.id).label("cnt"),
+                        func.coalesce(func.sum(Order.paid_amount), 0).label("gmv"),
+                    ).filter(
+                        Order.session_id.in_(session_str_ids)
+                    ).group_by(Order.session_id).all()
+                    for sid, cnt, gmv in order_stats:
+                        session_gmv_map[sid] = float(gmv or 0)
+                        session_order_map[sid] = int(cnt or 0)
+                except Exception as e:
+                    result["errors"].append(f"订单聚合查询异常: {str(e)[:200]}")
 
-            total_orders = db.query(func.coalesce(func.sum(LiveSession.total_orders), 0)).filter(
-                LiveSession.id.in_(session_ids) if session_ids else False
-            ).scalar() or 0 if session_ids else 0
+                try:
+                    viewer_stats = db.query(
+                        RealtimeDataPoint.session_id,
+                        func.coalesce(func.max(RealtimeDataPoint.viewer_count), 0).label("peak_viewers"),
+                        func.coalesce(func.sum(RealtimeDataPoint.new_viewers), 0).label("total_new"),
+                    ).filter(
+                        RealtimeDataPoint.session_id.in_(session_str_ids)
+                    ).group_by(RealtimeDataPoint.session_id).all()
+                    for sid, peak, total_new in viewer_stats:
+                        session_viewer_map[sid] = int(max(peak or 0, total_new or 0))
+                except Exception as e:
+                    result["errors"].append(f"实时数据聚合查询异常: {str(e)[:200]}")
+
+            def _session_gmv(s: LiveSession) -> float:
+                if s.total_gmv and s.total_gmv > 0:
+                    return float(s.total_gmv)
+                return session_gmv_map.get(s.session_id, 0.0)
+
+            def _session_viewers(s: LiveSession) -> int:
+                if s.total_viewers and s.total_viewers > 0:
+                    return int(s.total_viewers)
+                return session_viewer_map.get(s.session_id, 0)
+
+            def _session_orders(s: LiveSession) -> int:
+                if s.total_orders and s.total_orders > 0:
+                    return int(s.total_orders)
+                return session_order_map.get(s.session_id, 0)
+
+            total_gmv = sum(_session_gmv(s) for s in sessions)
+            total_viewers = sum(_session_viewers(s) for s in sessions)
+            total_orders = sum(_session_orders(s) for s in sessions)
 
             platform_stats = {}
             for s in sessions:
                 if s.platform not in platform_stats:
                     platform_stats[s.platform] = {"gmv": 0, "sessions": 0}
-                platform_stats[s.platform]["gmv"] += s.total_gmv or 0
+                platform_stats[s.platform]["gmv"] += _session_gmv(s)
                 platform_stats[s.platform]["sessions"] += 1
 
             anchor_stats = {}
             for s in sessions:
-                key = (s.anchor_id, (s.anchor.name if s.anchor else "未知"))
+                anchor_name = s.anchor.name if s.anchor else "未知"
+                key = (s.anchor_id, anchor_name)
                 if key not in anchor_stats:
                     anchor_stats[key] = {"gmv": 0, "sessions": 0}
-                anchor_stats[key]["gmv"] += s.total_gmv or 0
+                anchor_stats[key]["gmv"] += _session_gmv(s)
                 anchor_stats[key]["sessions"] += 1
 
             anchor_ranking = sorted(
