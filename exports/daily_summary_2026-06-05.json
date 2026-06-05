@@ -1,81 +1,81 @@
 {
   "report_date": "2026-06-05",
-  "total_sessions": 16,
-  "total_gmv": 0.0,
-  "total_viewers": 0,
+  "total_sessions": 31,
+  "total_gmv": 21509950.58675721,
+  "total_viewers": 7531653,
   "total_orders": 0,
-  "avg_gmv_per_session": 0.0,
+  "avg_gmv_per_session": 693869.3737663616,
   "platform_stats": {
     "快手": {
-      "gmv": 0,
-      "sessions": 2
-    },
-    "抖音": {
-      "gmv": 0,
-      "sessions": 3
-    },
-    "淘宝直播": {
-      "gmv": 0,
+      "gmv": 2415464.687087929,
       "sessions": 6
     },
+    "淘宝直播": {
+      "gmv": 13105603.799288698,
+      "sessions": 10
+    },
+    "抖音": {
+      "gmv": 4626447.398274932,
+      "sessions": 7
+    },
     "视频号": {
-      "gmv": 0,
-      "sessions": 3
+      "gmv": 835840.5288659916,
+      "sessions": 4
     },
     "B站直播": {
-      "gmv": 0,
-      "sessions": 2
+      "gmv": 526594.1732396584,
+      "sessions": 4
     }
   },
   "anchor_ranking": [
     {
-      "name": "快手主播1",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "抖音主播2",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "淘宝主播4",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "抖音主播3",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "淘宝主播5",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "抖音主播1",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "视频号主播1",
-      "gmv": 0,
-      "sessions": 1
-    },
-    {
-      "name": "视频号主播3",
-      "gmv": 0,
+      "name": "淘宝主播3",
+      "gmv": 1952199.5123434723,
       "sessions": 1
     },
     {
       "name": "淘宝主播3",
-      "gmv": 0,
+      "gmv": 1932608.3505418736,
       "sessions": 1
     },
     {
       "name": "淘宝主播1",
-      "gmv": 0,
+      "gmv": 1857128.0736346857,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播6",
+      "gmv": 1650122.986529025,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播4",
+      "gmv": 1514123.884355328,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播2",
+      "gmv": 1470309.608211426,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播2",
+      "gmv": 1238496.0207571774,
+      "sessions": 1
+    },
+    {
+      "name": "测试主播_douyin_3",
+      "gmv": 972914.8151172578,
+      "sessions": 1
+    },
+    {
+      "name": "抖音主播3",
+      "gmv": 869575.4603783963,
+      "sessions": 1
+    },
+    {
+      "name": "测试主播_douyin_4",
+      "gmv": 827701.2941217961,
       "sessions": 1
     }
   ],

@@ -189,7 +189,19 @@ class DouyinCrawler(BasePlatformCrawler):
     def _parse_api_sessions(self, data: Any) -> List[Dict]:
         if not data or not isinstance(data, (dict, list)):
             return []
-        items = data.get("data", {}).get("sessions", []) if isinstance(data, dict) else data
+        items = data
+        if isinstance(data, dict):
+            d = data.get("data", data)
+            if isinstance(d, dict):
+                items = (d.get("sessions")
+                         or d.get("list")
+                         or d.get("items")
+                         or d.get("records")
+                         or [])
+            else:
+                items = d
+        if not isinstance(items, list):
+            return []
         result = []
         for item in items:
             try:
@@ -287,18 +299,36 @@ class DouyinCrawler(BasePlatformCrawler):
     def _parse_api_orders(self, data: Any, session_id: str) -> List[Dict]:
         if not data or not isinstance(data, (dict, list)):
             return []
-        items = data.get("data", {}).get("orders", []) if isinstance(data, dict) else data
+        items = data
+        if isinstance(data, dict):
+            d = data.get("data", data)
+            if isinstance(d, dict):
+                items = (d.get("orders")
+                         or d.get("list")
+                         or d.get("items")
+                         or d.get("records")
+                         or [])
+            else:
+                items = d
+        if not isinstance(items, list):
+            return []
         result = []
         for item in items:
             try:
+                qty = int(item.get("quantity") or 1)
+                unit_price = float(item.get("unit_price") or item.get("price") or 99.0)
+                paid = float(item.get("paid_amount") or item.get("total_amount") or (qty * unit_price))
                 result.append({
                     "order_id": str(item.get("order_id") or f"ORD_{uuid.uuid4().hex[:12]}"),
                     "session_id": session_id,
-                    "product_sku": str(item.get("product_sku") or f"SKU{random.randint(1000, 9999)}"),
-                    "quantity": int(item.get("quantity") or 1),
-                    "unit_price": float(item.get("unit_price") or 99.0),
-                    "total_amount": float(item.get("total_amount") or 0),
-                    "discount_amount": float(item.get("discount_amount") or 0),
+                    "product_sku": str(item.get("product_sku") or item.get("sku") or f"SKU{random.randint(1000, 9999)}"),
+                    "product_name": str(item.get("product_name") or item.get("name") or "商品"),
+                    "quantity": qty,
+                    "unit_price": unit_price,
+                    "paid_amount": paid,
+                    "buyer_nick": str(item.get("buyer_nick") or "买家"),
+                    "order_time": self._to_datetime(item.get("order_time")),
+                    "status": str(item.get("status") or "paid"),
                 })
             except Exception as e:
                 logger.debug(f"[{self.platform_name}] 解析订单异常: {e}")
@@ -348,7 +378,19 @@ class _GenericPlatformCrawler(BasePlatformCrawler):
     def _parse_api_sessions(self, data: Any) -> List[Dict]:
         if not data or not isinstance(data, (dict, list)):
             return []
-        items = data.get("data", {}).get("sessions", []) if isinstance(data, dict) else data
+        items = data
+        if isinstance(data, dict):
+            d = data.get("data", data)
+            if isinstance(d, dict):
+                items = (d.get("sessions")
+                         or d.get("list")
+                         or d.get("items")
+                         or d.get("records")
+                         or [])
+            else:
+                items = d
+        if not isinstance(items, list):
+            return []
         result = []
         for item in items:
             try:
@@ -451,20 +493,38 @@ class _GenericPlatformCrawler(BasePlatformCrawler):
     def _parse_api_orders(self, data: Any, session_id: str) -> List[Dict]:
         if not data or not isinstance(data, (dict, list)):
             return []
-        items = data.get("data", {}).get("orders", []) if isinstance(data, dict) else data
+        items = data
+        if isinstance(data, dict):
+            d = data.get("data", data)
+            if isinstance(d, dict):
+                items = (d.get("orders")
+                         or d.get("list")
+                         or d.get("items")
+                         or d.get("records")
+                         or [])
+            else:
+                items = d
+        if not isinstance(items, list):
+            return []
         result = []
         for item in items:
             try:
                 qty = int(item.get("quantity") or 1)
-                price = float(item.get("unit_price") or random.uniform(*self._cfg.get("price_range", (29.9, 999.9))))
+                price = float(item.get("unit_price") or item.get("price")
+                              or random.uniform(*self._cfg.get("price_range", (29.9, 999.9))))
+                paid = float(item.get("paid_amount") or item.get("total_amount") or round(qty * price, 2))
                 result.append({
                     "order_id": str(item.get("order_id") or f"ORD_{uuid.uuid4().hex[:12]}"),
                     "session_id": session_id,
-                    "product_sku": str(item.get("product_sku") or f"SKU{random.randint(1000, 9999)}"),
+                    "product_sku": str(item.get("product_sku") or item.get("sku")
+                                       or f"SKU{random.randint(1000, 9999)}"),
+                    "product_name": str(item.get("product_name") or item.get("name") or "商品"),
                     "quantity": qty,
                     "unit_price": price,
-                    "total_amount": float(item.get("total_amount") or round(qty * price, 2)),
-                    "discount_amount": float(item.get("discount_amount") or 0),
+                    "paid_amount": paid,
+                    "buyer_nick": str(item.get("buyer_nick") or "买家"),
+                    "order_time": self._to_datetime(item.get("order_time")),
+                    "status": str(item.get("status") or "paid"),
                 })
             except Exception as e:
                 logger.debug(f"[{self.platform_name}] 解析订单异常: {e}")

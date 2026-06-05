@@ -133,12 +133,22 @@ def main() -> int:
             def _session_gmv(s: LiveSession) -> float:
                 if s.total_gmv and s.total_gmv > 0:
                     return float(s.total_gmv)
-                return session_gmv_map.get(s.session_id, 0.0)
+                order_gmv = session_gmv_map.get(s.session_id, 0.0)
+                if order_gmv > 0:
+                    return order_gmv
+                if s.estimated_gmv and s.estimated_gmv > 0:
+                    return float(s.estimated_gmv)
+                return 0.0
 
             def _session_viewers(s: LiveSession) -> int:
                 if s.total_viewers and s.total_viewers > 0:
                     return int(s.total_viewers)
-                return session_viewer_map.get(s.session_id, 0)
+                rt = session_viewer_map.get(s.session_id, 0)
+                if rt > 0:
+                    return rt
+                if s.estimated_traffic and s.estimated_traffic > 0:
+                    return int(s.estimated_traffic)
+                return 0
 
             def _session_orders(s: LiveSession) -> int:
                 if s.total_orders and s.total_orders > 0:
