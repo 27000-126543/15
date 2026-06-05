@@ -1,10 +1,12 @@
 import uuid
 import random
+import subprocess
+import sys
+import json
+import os
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
 from pathlib import Path
-import pandas as pd
-import numpy as np
 from sqlalchemy import func, and_
 
 from app import logger, get_db_session
@@ -13,7 +15,15 @@ from app.models import (
     RestockAlert, QualityAlert, Promotion, Anchor
 )
 from app.analytics_engine import AnalyticsEngine
-from config import settings, EXPORT_DIR, CHART_DIR
+from config import settings, EXPORT_DIR, CHART_DIR, WORKER_DIR, BASE_DIR
+
+try:
+    import pandas as pd
+    import numpy as np
+    PANDAS_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"pandas 不可用，将降级使用原生数据结构: {e}")
+    PANDAS_AVAILABLE = False
 
 try:
     import matplotlib
@@ -366,11 +376,115 @@ class PDFExporter:
 
 
 class DailyReportGenerator:
+    def _run_worker_subprocess(self, target_date: date) -> Optional[Dict]:
+        worker_script = WORKER_DIR / "report_worker.py"
+        if not worker_script.exists():
+            logger.warning(f"Worker脚本不存在: {worker_script}, 降级为内置生成")
+            return None
+
+        python_exe = settings.REPORT_WORKER_PYTHON or sys.executable
+        date_str = target_date.strftime("%Y-%m-%d")
+        output_dir = str(EXPORT_DIR)
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(BASE_DIR)
+
+        cmd = [python_exe, str(worker_script), date_str, output_dir]
+        logger.info(
+            f"[IsolatedWorker] 启动独立报表生成进程: "
+            f"python={python_exe}, date={date_str}, timeout={settings.REPORT_WORKER_TIMEOUT}s"
+        )
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=settings.REPORT_WORKER_TIMEOUT,
+                env=env,
+                cwd=str(BASE_DIR),
+            )
+
+            stdout = (proc.stdout or "").strip()
+            stderr = (proc.stderr or "").strip()
+
+            if stderr:
+                for line in stderr.splitlines()[:10]:
+                    logger.debug(f"[Worker STDERR] {line}")
+
+            if proc.returncode != 0:
+                logger.warning(
+                    f"[IsolatedWorker] 子进程退出码 {proc.returncode}, 降级为内置生成"
+                )
+                if stdout:
+                    try:
+                        err_result = json.loads(stdout)
+                        if isinstance(err_result, dict) and err_result.get("errors"):
+                            for e in err_result["errors"]:
+                                logger.warning(f"[Worker Error] {e}")
+                    except Exception:
+                        pass
+                return None
+
+            if not stdout:
+                logger.warning("[IsolatedWorker] 子进程无输出，降级为内置生成")
+                return None
+
+            json_str = stdout.strip()
+            brace_idx = json_str.find("{")
+            if brace_idx > 0:
+                logger.debug(f"[IsolatedWorker] 检测到非JSON前缀，截取从位置{brace_idx}开始")
+                json_str = json_str[brace_idx:]
+            last_brace = json_str.rfind("}")
+            if last_brace > 0 and last_brace < len(json_str) - 1:
+                json_str = json_str[:last_brace + 1]
+
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError as je:
+                logger.warning(f"[IsolatedWorker] 解析输出失败: {je}, 前500字符: {json_str[:500]}")
+                return None
+
+            if not result.get("success"):
+                logger.warning(
+                    f"[IsolatedWorker] 返回失败, errors={result.get('errors')}, "
+                    f"降级为内置生成"
+                )
+                return None
+
+            logger.info(
+                f"[IsolatedWorker] ✓ 报表生成成功: "
+                f"files={list(result.get('files', {}).keys())}"
+            )
+            for err in result.get("errors", []):
+                logger.debug(f"[Worker Non-Fatal] {err}")
+
+            return result
+
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                f"[IsolatedWorker] 子进程超时 ({settings.REPORT_WORKER_TIMEOUT}s), "
+                f"降级为内置生成"
+            )
+            return None
+        except Exception as e:
+            logger.warning(f"[IsolatedWorker] 调用异常: {e}, 降级为内置生成")
+            return None
+
     def generate(self, target_date: Optional[date] = None) -> Optional[Dict]:
         if not target_date:
             target_date = date.today()
 
         logger.info(f"开始生成 {target_date} 运营日报...")
+
+        if settings.REPORT_WORKER_ISOLATED:
+            worker_result = self._run_worker_subprocess(target_date)
+            if worker_result:
+                return self._save_worker_result(target_date, worker_result)
+            logger.warning("独立worker模式失败，降级为内置生成模式")
+
+        if not PANDAS_AVAILABLE:
+            logger.warning("pandas不可用，内置模式可能部分功能受限")
 
         df_platform = AnalyticsEngine.get_platform_summary(target_date)
         df_anchors = AnalyticsEngine.get_anchor_ranking(target_date)
@@ -491,6 +605,89 @@ class DailyReportGenerator:
             }
         except Exception as e:
             logger.error(f"保存日报失败: {e}")
+            db.rollback()
+            return None
+        finally:
+            db.close()
+
+    def _save_worker_result(self, target_date: date, worker_result: Dict) -> Optional[Dict]:
+        files = worker_result.get("files", {})
+        summary_path = files.get("summary")
+        csv_path = files.get("csv")
+        pdf_path = files.get("pdf", "")
+        excel_path = csv_path or ""
+
+        summary_data = {}
+        if summary_path and os.path.exists(summary_path):
+            try:
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"读取worker summary失败: {e}")
+
+        total_gmv = float(summary_data.get("total_gmv", 0))
+        total_orders = int(summary_data.get("total_orders", 0))
+        total_viewers = int(summary_data.get("total_viewers", 0))
+
+        db = get_db_session()
+        try:
+            existing = db.query(DailyReport).filter(DailyReport.report_date == target_date).first()
+            if existing:
+                db.delete(existing)
+                db.flush()
+
+            platform_summary_list = []
+            for pname, pst in summary_data.get("platform_stats", {}).items():
+                platform_summary_list.append({
+                    "platform": pname,
+                    "gmv": float(pst.get("gmv", 0)),
+                    "sessions": int(pst.get("sessions", 0)),
+                })
+
+            report = DailyReport(
+                report_id=f"RPT_{uuid.uuid4().hex[:12]}",
+                report_date=target_date,
+                total_gmv=round(total_gmv, 2),
+                total_orders=total_orders,
+                total_traffic_cost=0.0,
+                total_profit=round(total_gmv * 0.3, 2),
+                total_return_amount=0.0,
+                overall_roi=0.0,
+                platform_summary=platform_summary_list,
+                anchor_summary=summary_data.get("anchor_ranking", []),
+                product_top10=summary_data.get("top_products", []),
+                gmv_trend_7d=[],
+                gmv_trend_30d=[],
+                alerts_count=0,
+                promotions_active=0,
+                pdf_path=pdf_path,
+                excel_path=excel_path,
+            )
+            db.add(report)
+            db.commit()
+            logger.info(
+                f"[IsolatedWorker] 运营日报入库成功: report_id={report.report_id}, "
+                f"PDF={pdf_path}, CSV={csv_path}"
+            )
+
+            return {
+                "report_id": report.report_id,
+                "report_date": str(target_date),
+                "pdf_path": pdf_path,
+                "excel_path": excel_path,
+                "csv_path": csv_path,
+                "total_gmv": total_gmv,
+                "total_orders": total_orders,
+                "total_viewers": total_viewers,
+                "platform_summary": platform_summary_list,
+                "anchor_summary": summary_data.get("anchor_ranking", []),
+                "product_top10": summary_data.get("top_products", []),
+                "worker_generated": True,
+                "files": files,
+                "errors": worker_result.get("errors", []),
+            }
+        except Exception as e:
+            logger.error(f"[IsolatedWorker] 保存日报数据失败: {e}")
             db.rollback()
             return None
         finally:

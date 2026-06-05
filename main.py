@@ -26,6 +26,8 @@ from app.query_export import query_service, batch_exporter
 from app.logging_concurrency import (
     operation_logger, log_operation, concurrency_limiter, rate_limiter
 )
+from app.cache import cache_layer
+from app import test_db_connection
 
 
 scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
@@ -578,8 +580,45 @@ async def get_log_stats(target_date: Optional[date] = None):
 async def system_stats():
     db = next(get_db())
     try:
+        db_ok = test_db_connection()
+    except Exception:
+        db_ok = False
+
+    try:
+        cache_stats = cache_layer.get_stats()
+    except Exception as e:
+        cache_stats = {"enabled": False, "error": str(e)}
+
+    platform_crawler_status = {}
+    try:
+        for pname in settings.PLATFORMS:
+            pcfg = settings.get_platform_config(pname)
+            platform_crawler_status[pname] = {
+                "api_enabled": pcfg.enabled,
+                "base_url": pcfg.base_url,
+                "has_token": bool(pcfg.api_token),
+                "timeout": pcfg.timeout,
+            }
+    except Exception as e:
+        platform_crawler_status = {"error": str(e)}
+
+    try:
         return {
             "timestamp": datetime.now().isoformat(),
+            "app_name": settings.APP_NAME,
+            "debug": settings.DEBUG,
+            "database": {
+                "engine": settings.DB_ENGINE,
+                "connected": db_ok,
+                "pool_size": settings.DB_POOL_SIZE,
+                "max_overflow": settings.DB_MAX_OVERFLOW,
+            },
+            "cache": cache_stats,
+            "crawlers": platform_crawler_status,
+            "reporting": {
+                "isolated_worker": settings.REPORT_WORKER_ISOLATED,
+                "worker_timeout": settings.REPORT_WORKER_TIMEOUT,
+            },
             "anchors_count": db.query(Anchor).count(),
             "products_count": db.query(Product).count(),
             "sessions_count": db.query(LiveSession).count(),
@@ -589,6 +628,36 @@ async def system_stats():
         }
     finally:
         db.close()
+
+
+@app.get("/api/v1/system/health")
+async def system_health():
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {},
+    }
+    try:
+        health["checks"]["database"] = "ok" if test_db_connection() else "fail"
+    except Exception as e:
+        health["checks"]["database"] = f"error: {str(e)[:100]}"
+        health["status"] = "degraded"
+
+    try:
+        cs = cache_layer.get_stats()
+        health["checks"]["cache"] = "ok" if cs.get("enabled") or cs.get("local_cache_size", 0) >= 0 else "warn"
+        health["checks"]["cache_detail"] = cs
+    except Exception as e:
+        health["checks"]["cache"] = f"error: {str(e)[:100]}"
+
+    if all(v == "ok" for v in health["checks"].values() if isinstance(v, str)):
+        health["status"] = "healthy"
+    elif any("fail" in str(v) for v in health["checks"].values()):
+        health["status"] = "unhealthy"
+    else:
+        health["status"] = "degraded"
+
+    return health
 
 
 if __name__ == "__main__":

@@ -1,0 +1,83 @@
+{
+  "report_date": "2026-06-05",
+  "total_sessions": 16,
+  "total_gmv": 0.0,
+  "total_viewers": 0,
+  "total_orders": 0,
+  "avg_gmv_per_session": 0.0,
+  "platform_stats": {
+    "快手": {
+      "gmv": 0,
+      "sessions": 2
+    },
+    "抖音": {
+      "gmv": 0,
+      "sessions": 3
+    },
+    "淘宝直播": {
+      "gmv": 0,
+      "sessions": 6
+    },
+    "视频号": {
+      "gmv": 0,
+      "sessions": 3
+    },
+    "B站直播": {
+      "gmv": 0,
+      "sessions": 2
+    }
+  },
+  "anchor_ranking": [
+    {
+      "name": "快手主播1",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "抖音主播2",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播4",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "抖音主播3",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播5",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "抖音主播1",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "视频号主播1",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "视频号主播3",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播3",
+      "gmv": 0,
+      "sessions": 1
+    },
+    {
+      "name": "淘宝主播1",
+      "gmv": 0,
+      "sessions": 1
+    }
+  ],
+  "top_products": []
+}
